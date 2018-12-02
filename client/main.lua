@@ -1,4 +1,4 @@
-local HOSTNAME = "localhost"
+local HOSTNAME = "sofapizza.de"
 local PORT = 22122
 
 -- Add libraries to path
@@ -33,6 +33,8 @@ local function registerCallbacks()
 end
 
 function love.load()
+	min_dt = 1/60
+	next_time = love.timer.getTime()
 	Client = Sock.newClient(HOSTNAME, PORT)
 
 	registerCallbacks()
@@ -43,6 +45,7 @@ function love.load()
 end
 
 function love.update(dt)
+	next_time = next_time + min_dt
 	flux.update(dt)
 	Client:update()
 
@@ -51,6 +54,14 @@ end
 
 function love.draw()
 	Gamestate:draw()
+
+	local cur_time = love.timer.getTime()
+	if next_time <= cur_time then
+		next_time = cur_time
+		return
+	end
+	love.timer.sleep(next_time - cur_time)
+
 end
 
 function love.keypressed(key)
@@ -59,4 +70,15 @@ end
 
 function love.keyreleased(key)
 	Gamestate:keyreleased(key)
+end
+
+function love.textinput(text)
+	Gamestate:textinput(text)
+end
+
+function love.quit()
+	if Client then
+		Client:disconnect()
+		Client:update()
+	end
 end

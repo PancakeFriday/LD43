@@ -44,7 +44,7 @@ end
 function Sparky:move(mx,my)
 	self.bbox:move(mx,my)
 	for shape, delta in pairs(HC.collisions(self.bbox)) do
-		if shape.type == "wall" then
+		if shape.type == "wall" or shape.type == "door" then
 			self.bbox:move(-mx,-my)
 			if math.abs(delta.y) > math.abs(delta.x) then
 				self.vel.y = 100*lume.sign(delta.y)

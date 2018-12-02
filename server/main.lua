@@ -5,6 +5,10 @@ package.path = package.path .. ";lib/?.lua"
 package.path = package.path .. ";lib/?/init.lua"
 
 Sock = require "sock"
+Object = require "classic"
+lume = require "lume"
+
+local Lobby = require "lobby"
 
 local function registerCallbacks()
     Server:on("connect", function(data, client)
@@ -14,6 +18,7 @@ local function registerCallbacks()
     end)
 	Server:on("disconnect",function(data, client)
 		print("[INFO]: Disconnected client: "..client:getConnectId())
+		main_game:removePlayer(client)
 	end)
 end
 
@@ -22,6 +27,9 @@ function love.load()
 	Server = Sock.newServer("*", PORT)
 
 	registerCallbacks()
+
+	main_game = Lobby()
+	main_game:registerCallbacks()
 end
 
 function love.update(dt)

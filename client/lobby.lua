@@ -5,34 +5,92 @@ local ll,lr,lt,lb = 0.13,0.76,0.06,0.76
 
 love.math.setRandomSeed(love.timer.getTime())
 
-local ____ = 0.6
 local Lobby = Object:extend()
 
 local ROT = require 'rotLove/rot'
 local HC = require 'HC'
 
 local Sparky = require "sparky"
+local Door = require "door"
+
+function love.graphics.printUnscaled(camera, ...)
+	local args = {...}
+	love.graphics.push()
+	local s = camera:getScale()
+	local px, py = camera:getPosition()
+	love.graphics.translate(-args[2]-px, -args[3]-py)
+	love.graphics.scale(1/s, 1/s)
+	love.graphics.translate((args[2]*s+px*s), (args[3]*s+py*s))
+	args[2] = args[2]*s
+	args[3] = args[3]*s
+	love.graphics.print(unpack(args))
+	love.graphics.pop()
+end
 
 function Lobby:new()
-	self.mapw, self.maph = 100,100
-	local roomw, roomh = 10,9
+	Client:send("request_map")
+	Client:on("ready", function(data)
+		self.ready = true
+		self.dead_players = data
+
+		for i,v in pairs(self.dead_players) do
+			v.bbox = HC.rectangle(v.x-4.5,v.y-9,9,19)
+			v.bbox.type="dead_player"
+			v.bbox.obj = v
+		end
+
+		for i,v in lume.ripairs(self.doors) do
+			if v.r == self.startRoom or v.r == self.endRoom then
+				v:deactivate()
+				table.remove(self.doors,i)
+			end
+		end
+	end)
+	Client:on("request_map", function(data)
+		self.draw_map = data.draw_map
+		self.rooms = data.rooms
+		self.doors = data.doors
+		--self.corridors = data.corridors
+		self.mapw = data.mapw
+		self.maph = data.maph
+		self.startRoom = data.startRoom
+		self.endRoom = data.endRoom
+		self:init()
+	end)
+	Client:on("update_light", function(data)
+		for x,v in pairs(self.draw_map) do
+			for y,k in pairs(v) do
+				self.draw_map[x][y].l = math.max(k.l, data[x][y].l)
+			end
+		end
+	end)
+end
+
+function Lobby:init()
+	self.bgm = love.audio.newSource("sound/bgm.wav","static")
+	self.bgm:play()
+	self.num_frames = 0
+	self.enemies = {}
+	self.dead_players = {}
+	self.body_img = love.graphics.newImage("img/body.png")
+
 	self.camera = Gamera.new(0,0,self.mapw*32,self.maph*32)
 	local winw = love.graphics.getWidth()
-	self.camera:setScale(winw/((roomw+1)*32))
+	self.camera:setScale(winw/((10+1)*32))
+
+	local r = self.rooms[self.startRoom]
+	local startx = (r.l+r.r)/2
+	local starty = (r.t+r.b)/2
+	self.player = Player(true, startx, starty, self.camera)
+
+	self:createBounds()
+	self:createDoors()
 
 	self.minicamera = Gamera.new(0,0,self.mapw,self.maph)
 	self.minicamera:setScale(3)
 	self.minicamera:setWindow(10,10,200,100)
 
-	local time0 = love.timer.getTime()
-	local startx, starty = self:createMap(mapw,maph,roomw,roomh)
-	print("creating map took: " ..love.timer.getTime()-time0.."s")
-	self.player = Player(true, startx, starty)
-
-	self.light_img = love.graphics.newImage("img/light.png")
-
 	self.room_img = love.graphics.newImage("img/room_tiles_16.png")
-	self.door_img = love.graphics.newImage("img/doors.png")
 	self.room_quads = {}
 	for j=0,4 do
 		for i=0,2 do
@@ -41,86 +99,42 @@ function Lobby:new()
 		end
 	end
 
+	self.money_img = love.graphics.newImage("img/money.png")
+
 	self.shadow_canvas = love.graphics.newCanvas()
 
-	self.enemies = {}
-	table.insert(self.enemies, Sparky(startx, starty))
-end
-
-function Lobby:createMap()
-	self.map = ROT.Map.Digger(self.mapw,self.maph,{
-		roomWidth={8,10},
-		roomHeight={6,7},
-		corridorLength={2,2},
-	})
-	self.draw_map = {}
-	self.map:create(function(x,y,value)
-		if value == 0 then
-			for i=-0.25,0.75,0.5 do
-				if not self.draw_map[x+i] then self.draw_map[x+i] = {} end
-				for j=-0.25,0.75,0.5 do
-					self.draw_map[x+i][y+j] = {}
-					self.draw_map[x+i][y+j].q = 5
-					self.draw_map[x+i][y+j].l = 0
-				end
-			end
+	for i,v in pairs(self.doors) do
+		if v.r == self.startRoom then
+			v:activate(true)
 		end
-	end)
-
-	for x,col in pairs(self.draw_map) do
-		for y,v in pairs(col) do
-			if self:checkSurrounding(self.draw_map,x,y,{{0,0,0},{0,1,1},{0,1,1}}) then
-				self.draw_map[x][y].q = 1
-			elseif self:checkSurrounding(self.draw_map,x,y,{{0,0,0},{1,1,1},{1,1,1}}) then
-				self.draw_map[x][y].q = 2
-			elseif self:checkSurrounding(self.draw_map,x,y,{{0,0,1},{1,1,1},{1,1,1}}) then
-				self.draw_map[x][y].q = 2
-			elseif self:checkSurrounding(self.draw_map,x,y,{{1,0,0},{1,1,1},{1,1,1}}) then
-				self.draw_map[x][y].q = 2
-			elseif self:checkSurrounding(self.draw_map,x,y,{{1,0,1},{1,1,1},{1,1,1}}) then
-				self.draw_map[x][y].q = 2
-			elseif self:checkSurrounding(self.draw_map,x,y,{{0,0,0},{1,1,0},{1,1,0}}) then
-				self.draw_map[x][y].q = 3
-			elseif self:checkSurrounding(self.draw_map,x,y,{{0,1,1},{0,1,1},{0,1,1}}) then
-				self.draw_map[x][y].q = 4
-			elseif self:checkSurrounding(self.draw_map,x,y,{{1,1,1},{0,1,1},{0,1,1}}) then
-				self.draw_map[x][y].q = 4
-			elseif self:checkSurrounding(self.draw_map,x,y,{{0,1,1},{0,1,1},{1,1,1}}) then
-				self.draw_map[x][y].q = 4
-			elseif self:checkSurrounding(self.draw_map,x,y,{{1,1,1},{0,1,1},{1,1,1}}) then
-				self.draw_map[x][y].q = 4
-			elseif self:checkSurrounding(self.draw_map,x,y,{{1,1,0},{1,1,0},{1,1,0}}) then
-				self.draw_map[x][y].q = 6
-			elseif self:checkSurrounding(self.draw_map,x,y,{{1,1,0},{1,1,0},{1,1,1}}) then
-				self.draw_map[x][y].q = 6
-			elseif self:checkSurrounding(self.draw_map,x,y,{{1,1,1},{1,1,0},{1,1,0}}) then
-				self.draw_map[x][y].q = 6
-			elseif self:checkSurrounding(self.draw_map,x,y,{{1,1,1},{1,1,0},{1,1,1}}) then
-				self.draw_map[x][y].q = 6
-			elseif self:checkSurrounding(self.draw_map,x,y,{{0,1,1},{0,1,1},{0,0,0}}) then
-				self.draw_map[x][y].q = 7
-			elseif self:checkSurrounding(self.draw_map,x,y,{{1,1,1},{1,1,1},{0,0,0}}) then
-				self.draw_map[x][y].q = 8
-			elseif self:checkSurrounding(self.draw_map,x,y,{{1,1,1},{1,1,1},{1,0,0}}) then
-				self.draw_map[x][y].q = 8
-			elseif self:checkSurrounding(self.draw_map,x,y,{{1,1,1},{1,1,1},{0,0,1}}) then
-				self.draw_map[x][y].q = 8
-			elseif self:checkSurrounding(self.draw_map,x,y,{{1,1,1},{1,1,1},{1,0,1}}) then
-				self.draw_map[x][y].q = 8
-			elseif self:checkSurrounding(self.draw_map,x,y,{{1,1,0},{1,1,0},{0,0,0}}) then
-				self.draw_map[x][y].q = 9
-			elseif self:checkSurrounding(self.draw_map,x,y,{{1,1,1},{1,1,1},{1,1,0}}) then
-				self.draw_map[x][y].q = 10
-			elseif self:checkSurrounding(self.draw_map,x,y,{{1,1,1},{1,1,1},{0,1,1}}) then
-				self.draw_map[x][y].q = 11
-			elseif self:checkSurrounding(self.draw_map,x,y,{{1,1,0},{1,1,1},{1,1,1}}) then
-				self.draw_map[x][y].q = 13
-			elseif self:checkSurrounding(self.draw_map,x,y,{{0,1,1},{1,1,1},{1,1,1}}) then
-				self.draw_map[x][y].q = 14
-			end
+		if v.s and v.r ~= self.startRoom then
+			v:setSpecial()
 		end
 	end
 
+	-- Draw endroom
+	local endroom = self.rooms[self.endRoom]
+	local l,r,t,b = endroom.l, endroom.r, endroom.t, endroom.b
+	local x = (l+r)/2*32-self.money_img:getWidth()/2+16
+	local y = (t+b)/2*32-self.money_img:getHeight()/2+16
+	self.money_box = HC.rectangle(x,y,self.money_img:getWidth(),self.money_img:getHeight())
+	self.money_box.x = x
+	self.money_box.y = y
+	self.money_box.level = self
+	self.money_box.type = "money"
+
+	self.camera:setPosition(500,500)
+
+	self.font = love.graphics.newFont("fonts/Monda-Regular.ttf", 30)
+	love.graphics.setFont(self.font)
+
+	self.waiting = true
+	Client:send("player_ready")
+
+	self.initialized = true
+end
+
+function Lobby:createBounds()
 	for x,col in pairs(self.draw_map) do
 		for y,v in pairs(col) do
 			if v.q ~= 5 then
@@ -129,50 +143,20 @@ function Lobby:createMap()
 			end
 		end
 	end
-
-	--for i,room in pairs(self.map:getRooms()) do
-		--local l,r,t,b = room:getLeft(), room:getRight(), room:getTop(), room:getBottom()
-		--for _,x,y in room._doors:each() do
-			--if (x+1==l and y==t) or (x==l and y+1==t) --top left
-			--or (x-1==r and y==t) or (x==r and y+1==t) --top right
-			--or (x+1==l and y==b) or (x==l and y-1==b) --bottom left
-			--or (x-1==r and y==b) or (x==r and y-1==b) --bottom right
-			--then
-				--goto start_map
-			--end
-		--end
-	--end
-
-	-- Get start position
-	local rooms = self.map:getRooms()
-	rooms = lume.sort(rooms, function(r1,r2)
-		local cx1, cy1 = r1:getCenter()[1], r1:getCenter()[2]
-		local cx2, cy2 = r2:getCenter()[1], r2:getCenter()[2]
-		-- It's not exactly what I want but good enough
-		return cy1 < cy2 and cx1 < cx2
-	end)
-	return rooms[1]:getCenter()[1]-1, rooms[1]:getCenter()[2]-1
 end
 
-function Lobby:checkSurrounding(t,x,y,comp)
-	local t1 = {}
-	for j,col in pairs(comp) do
-		for i,v in pairs(col) do
-			local comp_value = ((t[x+(i-2)/2] and t[x+(i-2)/2][y+(j-2)/2]) and t[x+(i-2)/2][y+(j-2)/2].q) or 0
-			if math.min(1,comp_value) ~= v then
-				return false
-			end
-		end
+function Lobby:createDoors()
+	for i,v in pairs(self.doors) do
+		self.doors[i] = Door(v, self.rooms, self.doors, self.enemies, self.player,i)
 	end
-	return true
 end
 
 function Lobby:getCamPosition()
 	local player_in_room = false
 	local player_room = nil
 
-	for i,room in pairs(self.map:getRooms()) do
-		local l,r,t,b = room:getLeft()+ll, room:getRight()+lr, room:getTop()+lt, room:getBottom()+lb
+	for i,room in pairs(self.rooms) do
+		local l,r,t,b = room.l+ll, room.r+lr, room.t+lt, room.b+lb
 		local px, py = self.player.x/32, self.player.y/32
 		if px > l and px < r then
 			if py > t and py < b then
@@ -184,10 +168,7 @@ function Lobby:getCamPosition()
 	end
 
 	if player_in_room then
-		local l,r,t,b = player_room:getLeft(), player_room:getRight(), player_room:getTop(), player_room:getBottom()
-		local center = player_room:getCenter()
-		local camx = center[1]*32+8
-		local camy = center[2]*32-8
+		local l,r,t,b = player_room.l, player_room.r, player_room.t, player_room.b
 		self.camera:setPosition((l+r)/2*32+16,(t+b)/2*32+16)
 	else
 		self.camera:setPosition(self.player.x,self.player.y)
@@ -195,124 +176,196 @@ function Lobby:getCamPosition()
 end
 
 function Lobby:update(dt)
-	self.player:update(dt)
-	for i,v in pairs(self.enemies) do
-		v:update(dt)
-	end
-	local camx, camy = self:getCamPosition()
-	--self.camera:setPosition(camx, camy)
+	if self.initialized then
+		self.num_frames = self.num_frames + 1
 
-	self.minicamera:setPosition(self.player.x/32,self.player.y/32)
+		if self.num_frames % 10 == 0 then
+			local light_values = {}
+			for x,v in pairs(self.draw_map) do
+				light_values[x] = {}
+				for y,k in pairs(v) do
+					light_values[x][y] = k.l
+				end
+			end
+			Client:send("update_light", light_values)
+		end
+
+		self.player:update(dt)
+		for i,v in pairs(self.enemies) do
+			if #v == 0 then
+				for j,k in lume.ripairs(self.doors) do
+					if k.r == i then
+						if not k.special then
+							k:deactivate()
+							table.remove(self.doors,j)
+						end
+						Client:send("room_done",k.r)
+					end
+				end
+			end
+			for j,k in lume.ripairs(v) do
+				if k.dead then
+					table.remove(v,j)
+				end
+				k:update(dt)
+			end
+		end
+		local camx, camy = self:getCamPosition()
+		--self.camera:setPosition(camx, camy)
+
+		self.minicamera:setPosition(self.player.x/32,self.player.y/32)
+	end
 end
 
 function Lobby:draw()
-	local light_values = {}
-	self.camera:draw(function(l,t,w,h)
-		love.graphics.setColor(1,1,1)
-		local p = 4
-		local a = 5
-		local centerx = lume.round(self.player.x,0.5)+0.25
-		love.graphics.setColor(1,1,1)
-		for x=lume.round(l/32,0.5)-0.25,(l+w)/32,0.5 do
-			local col = self.draw_map[x]
-			if col then
-				for y=lume.round(t/32,0.5)-0.25,(t+h)/32,0.5 do
-					local v = col[y]
-					if v then
-						v.l = math.max(v.l, a/math.sqrt((self.player.x/32-x)^2+(self.player.y/32-y)^2)^p)
-						love.graphics.draw(self.room_img, self.room_quads[v.q],x*32,y*32)
-					end
-				end
-			end
-		end
-
-		love.math.setRandomSeed(777)
-		love.graphics.setCanvas(self.shadow_canvas)
-		for x=lume.round(l/32,0.5)-0.25,(l+w)/32,0.5 do
-			local col = self.draw_map[x]
-			if col then
-				for y=lume.round(t/32,0.5)-0.25,(t+h)/32,0.5 do
-					local v = col[y]
-					if v then
-						love.graphics.push()
-						love.graphics.translate(x*32,y*32)
-						local c = 1*v.l
-						love.graphics.setColor(c,c,c)
-						love.graphics.rectangle("fill",0,0,16,16)
-						local prev_col = (self.draw_map[x-0.5] and self.draw_map[x-0.5][y])
-						if prev_col then
-							c = 1*prev_col.l
-							local xoff = 16*(x%.25)
-							local yoff = 16*(y%.25)
-							love.graphics.setColor(c,c,c)
-							love.graphics.polygon("fill",-16+xoff,8,-16+xoff,16,-24+xoff,16)
-							love.graphics.polygon("fill",-16+xoff,8,-16+xoff,0,-24+xoff,0)
-						else
-
+	if self.initialized then
+		local light_values = {}
+		self.camera:draw(function(l,t,w,h)
+			love.graphics.setColor(1,1,1)
+			local p = 4
+			local a = 5
+			local centerx = lume.round(self.player.x,0.5)+0.25
+			love.graphics.setColor(1,1,1)
+			for x=lume.round(l/32,0.5)-0.25,(l+w)/32,0.5 do
+				local col = self.draw_map[x]
+				if col then
+					for y=lume.round(t/32,0.5)-0.25,(t+h)/32,0.5 do
+						local v = col[y]
+						if v then
+							v.l = math.max(v.l, a/math.sqrt((self.player.x/32-x)^2+(self.player.y/32-y)^2)^p)
+							love.graphics.draw(self.room_img, self.room_quads[v.q],x*32,y*32)
 						end
-						love.graphics.pop()
 					end
 				end
 			end
-		end
-		love.graphics.setCanvas()
-		love.math.setRandomSeed(love.timer.getTime())
 
-		love.graphics.setColor(1,1,1)
-		for i,v in pairs(self.enemies) do
-			v:draw()
-		end
-		self.player:draw()
-	end)
-	love.graphics.setBlendMode("multiply","premultiplied")
-	love.graphics.draw(self.shadow_canvas)
-	love.graphics.setBlendMode("alpha")
-	--love.graphics.setBlendMode("subtract")
-	--love.graphics.draw(self.shadow_canvas)
-	--love.graphics.setBlendMode("alpha")
+			love.math.setRandomSeed(777)
+			love.graphics.setCanvas(self.shadow_canvas)
+			for x=lume.round(l/32,0.5)-0.25,(l+w)/32,0.5 do
+				local col = self.draw_map[x]
+				if col then
+					for y=lume.round(t/32,0.5)-0.25,(t+h)/32,0.5 do
+						local v = col[y]
+						if v then
+							love.graphics.push()
+							love.graphics.translate(x*32,y*32)
+							local c = 1*v.l
+							love.graphics.setColor(c,c,c)
+							love.graphics.rectangle("fill",0,0,16,16)
+							local prev_col = (self.draw_map[x-0.5] and self.draw_map[x-0.5][y])
+							if prev_col then
+								c = 1*prev_col.l
+								local xoff = 16*(x%.25)
+								local yoff = 16*(y%.25)
+								love.graphics.setColor(c,c,c)
+								love.graphics.polygon("fill",-16+xoff,8,-16+xoff,16,-24+xoff,16)
+								love.graphics.polygon("fill",-16+xoff,8,-16+xoff,0,-24+xoff,0)
+							else
 
-	self.minicamera:draw(function(l,t,w,h)
-		love.graphics.rectangle("line", l,t,w,h)
-		love.graphics.setColor(0,0,0,0.4)
-		love.graphics.rectangle("fill", l,t,w,h)
-		love.graphics.setColor(1,1,1)
-		for x,col in pairs(self.draw_map) do
-			for y,v in pairs(col) do
-				if v.l > 0.4 then
-					love.graphics.setColor(1,1,1,1)
-					love.graphics.rectangle("fill",x,y,1,1)
+							end
+							love.graphics.pop()
+						end
+					end
 				end
 			end
+			love.graphics.setCanvas()
+			love.math.setRandomSeed(love.timer.getTime())
+
+			love.graphics.setColor(1,1,1)
+			for i,v in pairs(self.enemies) do
+				for j,k in pairs(v) do
+					k:draw()
+				end
+			end
+			love.graphics.setColor(1,1,1)
+			for i,v in pairs(self.doors) do
+				v:draw()
+			end
+			love.graphics.setColor(1,1,1)
+
+			love.graphics.draw(self.money_img, self.money_box.x, self.money_box.y)
+			for i,v in pairs(self.dead_players) do
+				love.graphics.draw(self.body_img,v.x-4.5,v.y-9)
+			end
+		end)
+		love.graphics.setBlendMode("multiply","premultiplied")
+		love.graphics.draw(self.shadow_canvas)
+		love.graphics.setBlendMode("alpha","alphamultiply")
+
+		self.camera:draw(function(l,t,w,h)
+			self.player:draw(l,t,w,h)
+		end)
+
+		self.minicamera:draw(function(l,t,w,h)
+			love.graphics.rectangle("line", l,t,w,h)
+			love.graphics.setColor(0,0,0,0.4)
+			love.graphics.rectangle("fill", l,t,w,h)
+			love.graphics.setColor(1,1,1)
+			for x,col in pairs(self.draw_map) do
+				for y,v in pairs(col) do
+					if v.l > 0.4 then
+						love.graphics.setColor(1,1,1,1)
+						love.graphics.rectangle("fill",x,y,1,1)
+					end
+				end
+			end
+			love.graphics.setColor(1,0,0)
+			love.graphics.rectangle("fill",self.player.x/32,self.player.y/32,1,1)
+		end)
+
+		love.graphics.setColor(1,1,1)
+		love.graphics.setFont(self.font)
+		if not self.ready then
+			local t = "        Your soul is not yet ready.\nI will accept your offering shortly..."
+			local w = self.font:getWidth(t)
+			love.graphics.setColor(0,0,0)
+			love.graphics.print(t,love.graphics.getWidth()/2-w/2,love.graphics.getHeight()-200)
+			love.graphics.setColor(1,1,1)
+			love.graphics.print(t,love.graphics.getWidth()/2-w/2,love.graphics.getHeight()-202)
 		end
-		love.graphics.setColor(1,0,0)
-		love.graphics.rectangle("fill",self.player.x/32,self.player.y/32,1,1)
-	end)
+		if self.finished then
+			local t = "The offerings of your predecors were well received\n     and I reward you with the monies. Congrats."
+			local w = self.font:getWidth(t)
+			love.graphics.setColor(0,0,0)
+			love.graphics.print(t,love.graphics.getWidth()/2-w/2,love.graphics.getHeight()-200)
+			love.graphics.setColor(1,1,1)
+			love.graphics.print(t,love.graphics.getWidth()/2-w/2,love.graphics.getHeight()-202)
+		end
+	end
 end
 
 function Lobby:keypressed(key)
-	if key == "m" then
-		local l,t,w,h = self.minicamera:getWindow()
-		if w == 200 then
-			self.minicamera:setWindow(10,10,love.graphics.getWidth()-20,love.graphics.getHeight()-20)
-			self.minicamera:setScale(6)
-		else
-			self.minicamera:setWindow(10,10,200,100)
-			self.minicamera:setScale(3)
+	if self.initialized then
+		if key == "m" and not self.player.dead then
+			local l,t,w,h = self.minicamera:getWindow()
+			if w == 200 then
+				self.minicamera:setWindow(10,10,love.graphics.getWidth()-20,love.graphics.getHeight()-20)
+				self.minicamera:setScale(6)
+			else
+				self.minicamera:setWindow(10,10,200,100)
+				self.minicamera:setScale(3)
+			end
 		end
+		--if key == "+" then
+			--local s = self.camera:getScale()
+			--self.camera:setScale(s+1)
+		--end
+		--if key == "-" then
+			--local s = self.camera:getScale()
+			--self.camera:setScale(math.max(1,s-1))
+		--end
+		self.player:keypressed(key)
 	end
-	--if key == "+" then
-		--local s = self.camera:getScale()
-		--self.camera:setScale(s+1)
-	--end
-	--if key == "-" then
-		--local s = self.camera:getScale()
-		--self.camera:setScale(math.max(1,s-1))
-	--end
-	self.player:keypressed(key)
 end
 
 function Lobby:keyreleased(key)
-	self.player:keyreleased(key)
+	if self.initialized then
+		self.player:keyreleased(key)
+	end
+end
+
+function Lobby:textinput(text)
+	self.player:textinput(text)
 end
 
 return Lobby
