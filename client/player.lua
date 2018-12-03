@@ -254,8 +254,10 @@ function Player:keypressed(key)
 		self.key_stack = lume.unique(self.key_stack)
 	end
 	if key == "space" then
-		self.sword_hit:stop()
-		self.sword_hit:play()
+		if not self.dead then
+			self.sword_hit:stop()
+			self.sword_hit:play()
+		end
 		if self.sword_movement.t ~= 0 and self.sword_movement.s == 1 then
 			self.anim.time = 0
 			self.anim:continue()
