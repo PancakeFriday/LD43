@@ -2,15 +2,15 @@ local HOSTNAME = "sofapizza.de"
 local PORT = 22122
 
 -- Add libraries to path
-package.path = package.path .. ";lib/?.lua"
-package.path = package.path .. ";lib/?/init.lua"
-package.path = package.path .. ";lib/?/main.lua"
+--package.path = package.path .. ";lib/?.lua"
+--package.path = package.path .. ";lib/?/init.lua"
+--package.path = package.path .. ";lib/?/main.lua"
 
-Sock = require "sock"
-Object = require "classic"
+Sock = require "lib.sock"
+Object = require "lib.classic"
 Gamestate = require "gamestate"
-lume = require "lume"
-flux = require "flux"
+lume = require "lib.lume"
+flux = require "lib.flux"
 
 -- Gamestates
 local Lobby = require "lobby"

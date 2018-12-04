@@ -1,5 +1,5 @@
 local Player = require "player"
-local Gamera = require "gamera"
+local Gamera = require "lib.gamera"
 
 local ll,lr,lt,lb = 0.13,0.76,0.06,0.76
 
@@ -7,8 +7,8 @@ love.math.setRandomSeed(love.timer.getTime())
 
 local Lobby = Object:extend()
 
-local ROT = require 'rotLove/rot'
-local HC = require 'HC'
+local ROT = require 'lib.rotLove.rot'
+local HC = require 'lib.HC'
 
 local Sparky = require "sparky"
 local Door = require "door"

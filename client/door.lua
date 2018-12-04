@@ -1,4 +1,4 @@
-local HC = require "HC"
+local HC = require "lib.HC"
 
 local Door = Object:extend()
 Door.img = love.graphics.newImage("img/doors.png")

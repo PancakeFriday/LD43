@@ -1,4 +1,4 @@
-local HC = require "HC"
+local HC = require "lib.HC"
 
 local Sparky = Object:extend()
 

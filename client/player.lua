@@ -1,6 +1,6 @@
 local utf8 = require("utf8")
 local Animation = require "animation"
-local HC = require "HC"
+local HC = require "lib.HC"
 
 local Player = Object:extend()
 
