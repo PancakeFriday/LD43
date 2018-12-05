@@ -39,10 +39,11 @@ function Lobby:new()
 			v.bbox.obj = v
 		end
 
-		for i,v in lume.ripairs(self.doors) do
+		for i,v in pairs(self.doors) do
 			if v.r == self.startRoom or v.r == self.endRoom then
 				v:deactivate()
-				table.remove(self.doors,i)
+				self.doors[i] = nil
+				--table.remove(self.doors,i)
 			end
 		end
 	end)
@@ -193,11 +194,11 @@ function Lobby:update(dt)
 		self.player:update(dt)
 		for i,v in pairs(self.enemies) do
 			if #v == 0 then
-				for j,k in lume.ripairs(self.doors) do
+				for j,k in pairs(self.doors) do
 					if k.r == i then
 						if not k.special then
 							k:deactivate()
-							table.remove(self.doors,j)
+							self.doors[j] = nil
 						end
 						Client:send("room_done",k.r)
 					end

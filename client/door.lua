@@ -113,6 +113,8 @@ function Door:setSpecial()
 	self.door_box_trigger:scale(2.0,2.0)
 	self.door_box_trigger.type = "door_special_trigger"
 	self.door_box_trigger.id = self.id
+	self.door_box_trigger.x = self.x
+	self.door_box_trigger.y = self.y
 
 	self.special = true
 end

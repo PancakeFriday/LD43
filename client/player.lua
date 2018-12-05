@@ -158,7 +158,10 @@ function Player:move(mx, my)
 			shape.obj:activate()
 		elseif shape.type == "money" then
 			shape.level.finished = true
-			Client:send("game_done")
+			if not self.game_done then
+				self.game_done = true
+				Client:send("game_done")
+			end
 		end
 	end
 	if has_col then
@@ -191,8 +194,12 @@ function Player:draw(l,t,w,h)
 			self:show_scroll(l,t,w,h,"Your sacrifice is required in order to unlock this door. The next hero will be able to continue in order to find the hidden treasure", "Continue", function()
 				local t = {}
 				flux.to(t,0.2,{}):oncomplete(function()
-					Client:send("unlock_door",v.id)
-					self:kill()
+					if not self.sent_unlock then
+						self.sent_unlock = true
+						local hash = love.data.hash("sha256", "x:"..v.x.."y:"..v.y)
+						Client:send("unlock_door",{hash=hash,index=v.id})
+						self:kill()
+					end
 				end)
 			end)
 		end
@@ -204,8 +211,12 @@ function Player:draw(l,t,w,h)
 			local mx, my = love.mouse.getPosition()
 			tx, ty = self.camera:toScreen(tx,ty)
 			if mx > tx and mx < tx + 60 then
-				if my > ty and my < ty + 40 then
-					Client:send("player_death", {x=self.x,y=self.y,text=self.death_text})
+				if my > ty-10 and my < ty + 50 then
+					if not self.sent_letter then
+						self.sent_letter = true
+						Client:send("player_death", {x=self.x,y=self.y,text=self.death_text})
+						Client:update()
+					end
 				end
 			end
 		end)
